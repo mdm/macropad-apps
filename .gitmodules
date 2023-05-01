@@ -1,0 +1,3 @@
+[submodule "sh1106"]
+	path = sh1106
+	url = ../sh1106
