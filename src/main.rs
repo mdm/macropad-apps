@@ -23,12 +23,12 @@ use embedded_graphics::{
     prelude::*,
     text::{Baseline, Text},
 };
-use embedded_hal::{digital::v2::InputPin, digital::v2::OutputPin, spi::MODE_0, timer::CountDown};
+use embedded_hal::{digital::v2::InputPin, digital::v2::OutputPin, spi::MODE_0};
 use fugit::RateExtU32;
 use panic_halt as _;
 use rand::Rng;
 use sh1106::{prelude::*, Builder};
-use smart_leds::{brightness, SmartLedsWrite, RGB8, hsv::{Hsv, hsv2rgb}};
+use smart_leds::{SmartLedsWrite, hsv::{Hsv, hsv2rgb}};
 use ws2812_pio::Ws2812;
 
 #[entry]
@@ -130,9 +130,6 @@ fn main() -> ! {
         delay.delay_ms(100);
     }
 
-    // let red: RGB8 = (255, 0, 0).into();
-    let black: RGB8 = (0, 0, 0).into();
-
     let key1 = pins.key1.into_pull_up_input();
     let key2 = pins.key2.into_pull_up_input();
     let key3 = pins.key3.into_pull_up_input();
@@ -150,20 +147,7 @@ fn main() -> ! {
         &key1, &key2, &key3, &key4, &key5, &key6, &key7, &key8, &key9, &key10, &key11, &key12,
     ];
 
-    let mut hues_and_values = [
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-        (0, 0),
-    ];
+    let mut hues_and_values = [(0, 0); 12];
 
     let mut rosc = RingOscillator::new(pac.ROSC).initialize();
 
@@ -178,7 +162,7 @@ fn main() -> ! {
             }
         }
 
-        ws.write(hues_and_values.iter().copied().enumerate().map(|(i, color)| {
+        ws.write(hues_and_values.iter().copied().map(|color| {
             let hsv = Hsv {
                 hue: color.0,
                 sat: 255,
