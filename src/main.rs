@@ -25,11 +25,17 @@ use embedded_graphics::{
 };
 use embedded_hal::{digital::v2::InputPin, digital::v2::OutputPin, spi::MODE_0};
 use fugit::RateExtU32;
-use panic_halt as _;
+use menu::Menu;
+use panic_semihosting as _;
 use rand::Rng;
 use sh1106::{prelude::*, Builder};
-use smart_leds::{SmartLedsWrite, hsv::{Hsv, hsv2rgb}};
+use smart_leds::{
+    hsv::{hsv2rgb, Hsv},
+    SmartLedsWrite,
+};
 use ws2812_pio::Ws2812;
+
+mod menu;
 
 #[entry]
 fn main() -> ! {
@@ -102,19 +108,6 @@ fn main() -> ! {
     display.init().unwrap();
     display.flush().unwrap();
 
-    // let text_style = MonoTextStyleBuilder::new()
-    //     .font(&FONT_6X10)
-    //     .text_color(BinaryColor::On)
-    //     .build();
-
-    // Text::with_baseline("Hello world!", Point::zero(), text_style, Baseline::Top)
-    //     .draw(&mut display)
-    //     .unwrap();
-
-    // Text::with_baseline("Hello Rust!", Point::new(0, 16), text_style, Baseline::Top)
-    //     .draw(&mut display)
-    //     .unwrap();
-
     let im: ImageRawLE<BinaryColor> = ImageRawLE::new(include_bytes!("../rust.raw"), 64);
 
     Image::new(&im, Point::new(32, 0))
@@ -151,25 +144,41 @@ fn main() -> ! {
 
     let mut rosc = RingOscillator::new(pac.ROSC).initialize();
 
+    let mut menu = Menu::new(
+        &[
+            "Hello Rust!",
+            "Hello world!",
+            "Hello Marc!",
+            "Test Item 4",
+            "Test Item 5",
+        ],
+        display.size().height,
+        &FONT_6X10,
+        BinaryColor::Off,
+        BinaryColor::On,
+    );
+
+    delay.delay_ms(2000);
     loop {
         delay.delay_ms(10);
 
         for (i, key) in keys.iter().enumerate() {
             if key.is_low().unwrap() {
+                menu.select_item(i);
+                menu.draw(&mut display).unwrap();
+                display.flush().unwrap();
+
                 hues_and_values[i] = (rosc.gen::<u8>(), 255);
             } else if hues_and_values[i].1 > 0 {
                 hues_and_values[i].1 -= 5;
             }
         }
 
-        ws.write(hues_and_values.iter().copied().map(|color| {
-            let hsv = Hsv {
-                hue: color.0,
-                sat: 255,
-                val: color.1,
-            };
+        ws.write(hues_and_values.iter().copied().map(|(hue, val)| {
+            let hsv = Hsv { hue, sat: 255, val };
 
             hsv2rgb(hsv)
-        })).unwrap();
+        }))
+        .unwrap();
     }
 }
