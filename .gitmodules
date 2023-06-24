@@ -1,3 +1,6 @@
 [submodule "sh1106"]
 	path = sh1106
 	url = ../sh1106
+[submodule "ws2812-pio-embassy"]
+	path = ws2812-pio-embassy
+	url = ../ws2812-pio-embassy/
