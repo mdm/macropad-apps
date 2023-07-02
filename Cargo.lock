@@ -171,15 +171,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cortex-m-semihosting"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c23234600452033cc77e4b761e740e02d2c4168e11dbf36ab14a0f58973592b0"
-dependencies = [
- "cortex-m",
-]
-
-[[package]]
 name = "crc-any"
 version = "2.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -275,22 +266,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
 
 [[package]]
-name = "embassy-cortex-m"
-version = "0.1.0"
-dependencies = [
- "atomic-polyfill 1.0.2",
- "cfg-if",
- "cortex-m",
- "critical-section",
- "embassy-executor",
- "embassy-hal-common",
- "embassy-macros",
- "embassy-sync",
-]
-
-[[package]]
 name = "embassy-embedded-hal"
 version = "0.1.0"
+source = "git+https://github.com/embassy-rs/embassy.git#03e0116a56d7bc4b8eb639fd590eaa186d039b2b"
 dependencies = [
  "embassy-futures",
  "embassy-sync",
@@ -305,6 +283,7 @@ dependencies = [
 [[package]]
 name = "embassy-executor"
 version = "0.2.0"
+source = "git+https://github.com/embassy-rs/embassy.git#03e0116a56d7bc4b8eb639fd590eaa186d039b2b"
 dependencies = [
  "atomic-polyfill 1.0.2",
  "cortex-m",
@@ -318,17 +297,22 @@ dependencies = [
 [[package]]
 name = "embassy-futures"
 version = "0.1.0"
+source = "git+https://github.com/embassy-rs/embassy.git#03e0116a56d7bc4b8eb639fd590eaa186d039b2b"
 
 [[package]]
 name = "embassy-hal-common"
 version = "0.1.0"
+source = "git+https://github.com/embassy-rs/embassy.git#03e0116a56d7bc4b8eb639fd590eaa186d039b2b"
 dependencies = [
+ "cortex-m",
+ "critical-section",
  "num-traits",
 ]
 
 [[package]]
 name = "embassy-macros"
 version = "0.2.0"
+source = "git+https://github.com/embassy-rs/embassy.git#03e0116a56d7bc4b8eb639fd590eaa186d039b2b"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -339,15 +323,14 @@ dependencies = [
 [[package]]
 name = "embassy-rp"
 version = "0.1.0"
+source = "git+https://github.com/embassy-rs/embassy.git#03e0116a56d7bc4b8eb639fd590eaa186d039b2b"
 dependencies = [
  "atomic-polyfill 1.0.2",
  "cfg-if",
  "cortex-m",
  "cortex-m-rt",
  "critical-section",
- "embassy-cortex-m",
  "embassy-embedded-hal",
- "embassy-executor",
  "embassy-futures",
  "embassy-hal-common",
  "embassy-sync",
@@ -373,6 +356,7 @@ dependencies = [
 [[package]]
 name = "embassy-sync"
 version = "0.2.0"
+source = "git+https://github.com/embassy-rs/embassy.git#03e0116a56d7bc4b8eb639fd590eaa186d039b2b"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -384,6 +368,7 @@ dependencies = [
 [[package]]
 name = "embassy-time"
 version = "0.1.1"
+source = "git+https://github.com/embassy-rs/embassy.git#03e0116a56d7bc4b8eb639fd590eaa186d039b2b"
 dependencies = [
  "atomic-polyfill 1.0.2",
  "cfg-if",
@@ -398,6 +383,7 @@ dependencies = [
 [[package]]
 name = "embassy-usb-driver"
 version = "0.1.0"
+source = "git+https://github.com/embassy-rs/embassy.git#03e0116a56d7bc4b8eb639fd590eaa186d039b2b"
 
 [[package]]
 name = "embedded-dma"
@@ -527,6 +513,41 @@ dependencies = [
  "bytemuck",
  "half",
  "typenum",
+]
+
+[[package]]
+name = "fixed-macro"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0c48af8cb14e02868f449f8a2187bd78af7a08da201fdc78d518ecb1675bc"
+dependencies = [
+ "fixed",
+ "fixed-macro-impl",
+ "fixed-macro-types",
+]
+
+[[package]]
+name = "fixed-macro-impl"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c93086f471c0a1b9c5e300ea92f5cd990ac6d3f8edf27616ef624b8fa6402d4b"
+dependencies = [
+ "fixed",
+ "paste",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "fixed-macro-types"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "044a61b034a2264a7f65aa0c3cd112a01b4d4ee58baace51fead3f21b993c7e4"
+dependencies = [
+ "fixed",
+ "fixed-macro-impl",
 ]
 
 [[package]]
@@ -806,6 +827,7 @@ dependencies = [
  "adafruit-macropad",
  "cortex-m",
  "cortex-m-rt",
+ "embassy-embedded-hal",
  "embassy-executor",
  "embassy-rp",
  "embassy-sync",
@@ -814,12 +836,11 @@ dependencies = [
  "embedded-hal 0.2.7",
  "fugit",
  "panic-halt",
- "panic-semihosting",
  "rand",
  "rp2040-hal",
  "sh1106",
  "smart-leds",
- "ws2812-pio",
+ "ws2812-pio-embassy",
 ]
 
 [[package]]
@@ -895,16 +916,6 @@ name = "panic-halt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de96540e0ebde571dc55c73d60ef407c653844e6f9a1e2fdbd40c07b9252d812"
-
-[[package]]
-name = "panic-semihosting"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee8a3e1233d9073d76a870223512ce4eeea43c067a94a445c13bd6d792d7b1ab"
-dependencies = [
- "cortex-m",
- "cortex-m-semihosting",
-]
 
 [[package]]
 name = "parking_lot"
@@ -1123,9 +1134,9 @@ dependencies = [
 
 [[package]]
 name = "rp-pac"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a76e426cd8377db668fba1fe885028788b126b7cef91059cd478de8b076c2915"
+checksum = "33dd6f870a5f492dcd71c74ccb5d9b5987e43467697563c02995ed4f96f50618"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
@@ -1151,9 +1162,9 @@ dependencies = [
 
 [[package]]
 name = "rp2040-hal"
-version = "0.8.0"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd64ea14218eaa350e5cf1023b7a84c267f092e4a64b69129dc460e53412bed8"
+checksum = "1369bb84862d7f69391a96606b2f29a00bfce7f29a749e23d5f01fc3f607ada0"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -1315,9 +1326,9 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "static_cell"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4c37c250d21f53fa7165e76e5401d7e6539c211a8d2cf449e3962956a5cc2ce"
+checksum = "ed6a851e9c00ce152b2bad24e8545a6db0b8646988267a6ea966d95c6932e8a2"
 dependencies = [
  "atomic-polyfill 1.0.2",
 ]
@@ -1639,16 +1650,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a515f5799fe4961cb532f983ce2b23082366b898e52ffbce459c86f67c8378a"
 
 [[package]]
-name = "ws2812-pio"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d219e3b43c1e14305b36363060c0348d560314e235d999cf492bbbab1f38e8d"
+name = "ws2812-pio-embassy"
+version = "0.1.0"
 dependencies = [
- "cortex-m",
- "embedded-hal 0.2.7",
- "fugit",
- "nb 1.1.0",
+ "embassy-rp",
+ "fixed",
+ "fixed-macro",
  "pio",
- "rp2040-hal",
- "smart-leds-trait",
+ "smart-leds",
 ]
