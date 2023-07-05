@@ -1,11 +1,22 @@
+use embassy_rp::usb::In;
+use embassy_sync::{
+    blocking_mutex::raw::RawMutex,
+    pubsub::{DynSubscriber, Subscriber, WaitResult},
+};
 use embedded_graphics::{
     draw_target::DrawTarget,
-    mono_font::{MonoFont, MonoTextStyle, MonoTextStyleBuilder},
-    pixelcolor::PixelColor,
+    mono_font::{ascii::FONT_6X10, MonoFont, MonoTextStyle, MonoTextStyleBuilder},
+    pixelcolor::{BinaryColor, PixelColor},
     prelude::{Point, Size},
     primitives::{Primitive, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
     text::{Baseline, Text},
     Drawable,
+};
+use sh1106::{interface::DisplayInterface, prelude::GraphicsMode};
+
+use crate::{
+    input_handler::{InputEvent, InputSource},
+    INPUT_CHANNEL,
 };
 
 pub struct Menu<'a, C: PixelColor> {
@@ -142,5 +153,56 @@ impl<C: PixelColor> Drawable for Menu<'_, C> {
         }
 
         Ok(())
+    }
+}
+
+pub struct MenuManager<'m, 'i> {
+    menu: Menu<'m, BinaryColor>,
+    input_subscriber: DynSubscriber<'i, InputEvent>,
+}
+
+impl<'m, 'i> MenuManager<'m, 'i> {
+    pub fn new(menu_items: &'m [&str], display_height: u32) -> Self {
+        let menu = Menu::new(
+            menu_items,
+            display_height,
+            &FONT_6X10,
+            BinaryColor::Off,
+            BinaryColor::On,
+        );
+
+        let input_subscriber = INPUT_CHANNEL.dyn_subscriber().unwrap();
+
+        MenuManager {
+            menu,
+            input_subscriber,
+        }
+    }
+
+    pub async fn choose<DI>(&mut self, display: &mut GraphicsMode<DI>) -> Option<usize>
+    where
+        DI: DisplayInterface,
+    {
+        display.clear();
+        self.menu.draw(display).ok()?;
+        display.flush().ok()?;
+
+        loop {
+            let wait_result = self.input_subscriber.next_message().await;
+
+            if let WaitResult::Message(msg) = wait_result {
+                match msg {
+                    InputEvent::Pressed(InputSource::Key(key)) => {
+                        self.menu.select_item(key);
+                        self.menu.draw(display).ok()?;
+                        display.flush().ok()?;
+                    }
+                    InputEvent::Pressed(InputSource::Button) => {
+                        return Some(self.menu.selected);
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 }

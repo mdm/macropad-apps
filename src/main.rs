@@ -27,7 +27,7 @@ use embedded_graphics::{
 };
 use embedded_hal::{digital::v2::InputPin, digital::v2::OutputPin, spi::MODE_0, timer::CountDown};
 use fugit::RateExtU32;
-use menu::Menu;
+use menu::{Menu, MenuManager};
 use panic_halt as _;
 use rand::Rng;
 use rp2040_hal::rosc::{Enabled, RingOscillator};
@@ -164,7 +164,7 @@ async fn main(spawner: Spawner) {
     display.init().unwrap();
     display.flush().unwrap();
 
-    let mut menu = Menu::new(
+    let choice = MenuManager::new(
         &[
             "Hello Rust!",
             "Hello world!",
@@ -173,12 +173,12 @@ async fn main(spawner: Spawner) {
             "Test Item 5",
         ],
         display.size().height,
-        &FONT_6X10,
-        BinaryColor::Off,
-        BinaryColor::On,
-    );
-    menu.draw(&mut display).unwrap();
-    display.flush().unwrap();
+    ).choose(&mut display).await;
+
+    if let Some(choice) = choice {
+        display.clear();
+        display.flush().unwrap();
+    }
 
     loop {
         Timer::after(Duration::from_secs(1)).await;

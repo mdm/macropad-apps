@@ -24,4 +24,5 @@ rp2040-hal = "0.8.0"
 sh1106 = { path = "sh1106" }
 smart-leds = "0.3.0"
 ws2812-pio-embassy = { path = "ws2812-pio-embassy" }
+deca = "0.0.10"
 # defmt = "0.3.4"
