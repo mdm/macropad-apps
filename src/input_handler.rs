@@ -1,6 +1,9 @@
-use embassy_rp::gpio::{AnyPin, Input, Pull};
+use embassy_futures::select::{select, Either};
+use embassy_rp::{gpio::{AnyPin, Input, Pull}, pio::Instance};
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, pubsub::Publisher};
 use embassy_time::{Duration, Timer};
+
+use crate::rotary_io::RotaryIO;
 
 #[derive(Clone)]
 pub enum InputSource {
@@ -12,25 +15,28 @@ pub enum InputSource {
 pub enum InputEvent {
     Pressed(InputSource),
     Released(InputSource),
-    TurnedCW,
-    TurnedCCW,
+    TurnedCW(i32),
+    TurnedCCW(i32),
 }
 
 const NUM_KEYS: usize = 12;
 
-pub struct InputHandler<'a, const SUBS: usize> {
+pub struct InputHandler<'a, P: Instance, const S: usize, const CAP: usize, const SUBS: usize> {
     button_input: Input<'a, AnyPin>,
     button_active: bool,
     key_inputs: [Input<'a, AnyPin>; NUM_KEYS],
     key_active: [bool; NUM_KEYS],
-    publisher: Publisher<'a, ThreadModeRawMutex, InputEvent, 4, SUBS, 1>,
+    rotary_io: RotaryIO<'a, P, S>,
+    encoder_position: i32,
+    publisher: Publisher<'a, ThreadModeRawMutex, InputEvent, CAP, SUBS, 1>,
 }
 
-impl<'a, const SUBS: usize> InputHandler<'a, SUBS> {
+impl<'a, P: Instance, const S: usize, const CAP: usize, const SUBS: usize> InputHandler<'a, P, S, CAP, SUBS> {
     pub fn new(
         button: AnyPin,
         keys: [AnyPin; NUM_KEYS],
-        publisher: Publisher<'a, ThreadModeRawMutex, InputEvent, 4, SUBS, 1>,
+        rotary_io: RotaryIO<'a, P, S>,
+        publisher: Publisher<'a, ThreadModeRawMutex, InputEvent, CAP, SUBS, 1>,
     ) -> Self {
         let button_input = Input::new(button, Pull::Up);
         let button_active = false;
@@ -38,11 +44,15 @@ impl<'a, const SUBS: usize> InputHandler<'a, SUBS> {
         let key_inputs = keys.map(|key| Input::new(key, Pull::Up));
         let key_active = [false; NUM_KEYS];
 
+        let encoder_position = 0;
+
         InputHandler {
             button_input,
             button_active,
             key_inputs,
             key_active,
+            rotary_io,
+            encoder_position,
             publisher,
         }
     }
@@ -78,7 +88,17 @@ impl<'a, const SUBS: usize> InputHandler<'a, SUBS> {
                 }
             }
 
-            Timer::after(interval).await;
+            match select(Timer::after(interval), self.rotary_io.wait_position_change()).await {
+                Either::First(_) => {}
+                Either::Second(position) => {
+                    if position < self.encoder_position {
+                        self.publisher.publish(InputEvent::TurnedCCW(position)).await;
+                    } else {
+                        self.publisher.publish(InputEvent::TurnedCW(position)).await;
+                    }
+                    self.encoder_position = position;
+                }
+            }
         }
     }
 }

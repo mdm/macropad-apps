@@ -1,50 +1,39 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
+#![feature(array_chunks)]
 
-use core::cell::RefCell;
-
-use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_executor::Spawner;
 use embassy_rp::{
     clocks::RoscRng,
     gpio::{AnyPin, Level, Output},
-    pac::{pio::StateMachine, resets::regs::Peripherals},
-    peripherals::PIO0,
-    pio::{Instance, Pio}, spi::{Spi, Blocking, self},
+    peripherals::{PIO0, PIO1},
+    pio::Pio,
+    spi::{self, Blocking, Spi},
 };
 use embassy_sync::{
-    blocking_mutex::{raw::{ThreadModeRawMutex, NoopRawMutex}, Mutex},
-    pubsub::{PubSubChannel, Subscriber, WaitResult},
+    blocking_mutex::raw::ThreadModeRawMutex,
+    pubsub::{PubSubChannel, WaitResult},
 };
-use embassy_time::{Duration, Timer, Delay};
-use embedded_graphics::{
-    image::{Image, ImageRawLE},
-    mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},
-    pixelcolor::BinaryColor,
-    prelude::*,
-    text::{Baseline, Text},
-};
-use embedded_hal::{digital::v2::InputPin, digital::v2::OutputPin, spi::MODE_0, timer::CountDown};
-use fugit::RateExtU32;
-use menu::{Menu, MenuManager};
+use embassy_time::{Delay, Duration, Timer};
+use embedded_graphics::prelude::*;
+use menu::MenuManager;
 use panic_halt as _;
 use rand::Rng;
-use rp2040_hal::rosc::{Enabled, RingOscillator};
 use sh1106::{prelude::*, Builder};
-use smart_leds::{
-    hsv::{hsv2rgb, Hsv},
-    SmartLedsWrite, RGB8,
-};
+use smart_leds::hsv::{hsv2rgb, Hsv};
 use ws2812_pio_embassy::Ws2812;
 
 use input_handler::{InputEvent, InputHandler, InputSource};
 
+mod chip8;
 mod input_handler;
 mod menu;
+mod rotary_io;
 
-const SUBS: usize = 4;
-static INPUT_CHANNEL: PubSubChannel<ThreadModeRawMutex, InputEvent, 4, SUBS, 1> =
+const CAP: usize = 8;
+const SUBS: usize = 8;
+static INPUT_CHANNEL: PubSubChannel<ThreadModeRawMutex, InputEvent, CAP, SUBS, 1> =
     PubSubChannel::new();
 
 const NEOPIXEL_NUM_LEDS: usize = 12;
@@ -75,7 +64,7 @@ async fn blinker_task(mut led: Output<'static, AnyPin>, interval: Duration) {
 }
 
 #[embassy_executor::task]
-async fn color_fader_task(mut ws2812: Ws2812<'static, PIO0, 0, NEOPIXEL_NUM_LEDS>) {
+async fn color_fader_task(mut ws2812: Ws2812<'static, PIO1, 0, NEOPIXEL_NUM_LEDS>) {
     let mut input_subscriber = INPUT_CHANNEL.subscriber().unwrap();
 
     let mut hues_and_values = [(0, 0); 12];
@@ -108,13 +97,21 @@ async fn color_fader_task(mut ws2812: Ws2812<'static, PIO0, 0, NEOPIXEL_NUM_LEDS
 }
 
 #[embassy_executor::task]
-async fn input_handler_task(mut input_handler: InputHandler<'static, SUBS>) {
+async fn input_handler_task(mut input_handler: InputHandler<'static, PIO0, 0, CAP, SUBS>) {
     input_handler.run().await;
 }
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let peripherals = embassy_rp::init(Default::default());
+
+    let Pio {
+        mut common,
+        sm0,
+        ..
+    } = Pio::new(peripherals.PIO0);
+
+    let rotary_io = rotary_io::RotaryIO::new(&mut common, sm0, peripherals.PIN_17, peripherals.PIN_18);
 
     let button = peripherals.PIN_0.into();
     let keys = [
@@ -132,12 +129,12 @@ async fn main(spawner: Spawner) {
         peripherals.PIN_12.into(),
     ];
     let input_publisher = INPUT_CHANNEL.publisher().unwrap();
-    let input_handler = InputHandler::new(button, keys, input_publisher);
+    let input_handler = InputHandler::new(button, keys, rotary_io, input_publisher);
     spawner.spawn(input_handler_task(input_handler)).unwrap();
 
     let Pio {
         mut common, sm0, ..
-    } = Pio::new(peripherals.PIO0);
+    } = Pio::new(peripherals.PIO1);
     let ws2812 = Ws2812::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_19);
     spawner.spawn(color_fader_task(ws2812)).unwrap();
 
@@ -152,7 +149,8 @@ async fn main(spawner: Spawner) {
     let miso = peripherals.PIN_28;
     let mut display_config = spi::Config::default();
     display_config.frequency = 10_000_000;
-    let spi: Spi<'_, _, Blocking> = Spi::new_blocking(peripherals.SPI1, sclk, mosi, miso, display_config);
+    let spi: Spi<'_, _, Blocking> =
+        Spi::new_blocking(peripherals.SPI1, sclk, mosi, miso, display_config);
 
     let oled_cs = Output::new(peripherals.PIN_22, Level::Low);
     let mut oled_reset = Output::new(peripherals.PIN_23, Level::Low);
@@ -166,6 +164,7 @@ async fn main(spawner: Spawner) {
 
     let choice = MenuManager::new(
         &[
+            "Chip-8 Emulator",
             "Hello Rust!",
             "Hello world!",
             "Hello Marc!",
@@ -173,12 +172,55 @@ async fn main(spawner: Spawner) {
             "Test Item 5",
         ],
         display.size().height,
-    ).choose(&mut display).await;
+    )
+    .choose(&mut display)
+    .await;
 
     if let Some(choice) = choice {
         display.clear();
         display.flush().unwrap();
+        match choice {
+            0 => {
+                let choice = MenuManager::new(&["Pong", "Blinky"], display.size().height)
+                    .choose(&mut display)
+                    .await;
+
+                if let Some(choice) = choice {
+                    display.clear();
+                    display.flush().unwrap();
+
+                    let mut chip8 = chip8::Chip8Harness::new();
+                    match choice {
+                        0 => {
+                            chip8
+                                .run(
+                                    include_bytes!("../chip8-rs/games/PONG"),
+                                    [1, 0, 12, 4, 0, 13, 0, 0, 0, 0, 0, 0],
+                                    &mut display,
+                                )
+                                .await
+                                .unwrap();
+                        }
+                        1 => {
+                            chip8
+                                .run(
+                                    include_bytes!("../chip8-rs/games/BLINKY"),
+                                    [0, 3, 0, 7, 6, 8, 0, 0, 0, 0, 0, 0],
+                                    &mut display,
+                                )
+                                .await
+                                .unwrap();
+                        }
+                        _ => unreachable!(),
+                    };
+                }
+            }
+            _ => {}
+        }
     }
+
+    display.clear();
+    display.flush().unwrap();
 
     loop {
         Timer::after(Duration::from_secs(1)).await;
