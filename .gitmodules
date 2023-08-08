@@ -4,3 +4,7 @@
 [submodule "ws2812-pio-embassy"]
 	path = ws2812-pio-embassy
 	url = ../ws2812-pio-embassy/
+[submodule "chip8-rs"]
+	path = chip8-rs
+	url = ../chip8-rs/
+	branch = support-bigger-display
