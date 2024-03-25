@@ -5,10 +5,11 @@
 
 use embassy_executor::Spawner;
 use embassy_rp::{
-    clocks::RoscRng,
+    clocks::{clk_sys_freq, RoscRng},
     gpio::{AnyPin, Level, Output},
     peripherals::{PIO0, PIO1},
     pio::Pio,
+    pwm::{self, Pwm},
     spi::{self, Blocking, Spi},
 };
 use embassy_sync::{
@@ -17,6 +18,7 @@ use embassy_sync::{
 };
 use embassy_time::{Delay, Duration, Timer};
 use embedded_graphics::prelude::*;
+use fixed::FixedU16;
 use menu::MenuManager;
 use panic_halt as _;
 use rand::Rng;
@@ -106,12 +108,11 @@ async fn main(spawner: Spawner) {
     let peripherals = embassy_rp::init(Default::default());
 
     let Pio {
-        mut common,
-        sm0,
-        ..
+        mut common, sm0, ..
     } = Pio::new(peripherals.PIO0);
 
-    let rotary_io = rotary_io::RotaryIO::new(&mut common, sm0, peripherals.PIN_17, peripherals.PIN_18);
+    let rotary_io =
+        rotary_io::RotaryIO::new(&mut common, sm0, peripherals.PIN_17, peripherals.PIN_18);
 
     let button = peripherals.PIN_0.into();
     let keys = [
@@ -143,6 +144,15 @@ async fn main(spawner: Spawner) {
     spawner
         .spawn(blinker_task(led, Duration::from_millis(300)))
         .unwrap();
+
+    let mut speaker_enable = Output::new(peripherals.PIN_14, Level::High);
+    let mut pwm_config: pwm::Config = Default::default();
+    pwm_config.divider = FixedU16::from_num(40);
+    pwm_config.top = (clk_sys_freq() as f64 / f64::from(pwm_config.divider) / 440.0) as u16;
+    pwm_config.compare_a = pwm_config.top / 2;
+    let mut pwm = Pwm::new_output_a(peripherals.PWM_CH0, peripherals.PIN_16, pwm_config);
+    Timer::after(Duration::from_secs(2)).await;
+    speaker_enable.set_low();
 
     let sclk = peripherals.PIN_26;
     let mosi = peripherals.PIN_27;

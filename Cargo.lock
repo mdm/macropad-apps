@@ -492,9 +492,9 @@ dependencies = [
 
 [[package]]
 name = "fixed"
-version = "1.23.1"
+version = "1.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79386fdcec5e0fde91b1a6a5bcd89677d1f9304f7f986b154a1b9109038854d9"
+checksum = "4810bcba5534219e7c160473f3a59167e2c98bd7516bc0eec5185848bcd38963"
 dependencies = [
  "az",
  "bytemuck",
@@ -812,7 +812,7 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "embedded-graphics",
- "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0-alpha.10",
  "fixed",
  "itoa",
  "panic-halt",
@@ -820,7 +820,7 @@ dependencies = [
  "pio-proc",
  "rand",
  "sh1106",
- "smart-leds",
+ "smart-leds 0.4.0",
  "ws2812-pio-embassy",
 ]
 
@@ -1030,9 +1030,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.59"
+version = "1.0.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6aeca18b86b413c660b781aa319e4e2648a3e6f9eadc9b47e9038e6fe9f3451b"
+checksum = "e835ff2298f5721608eb1a980ecaee1aef2c132bf95ecc026a11b7bf3c01c02e"
 dependencies = [
  "unicode-ident",
 ]
@@ -1223,7 +1223,16 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38dd45fa275f70b4110eac5f5182611ad384f88bb22b68b9a9c3cafd7015290b"
 dependencies = [
- "smart-leds-trait",
+ "smart-leds-trait 0.2.1",
+]
+
+[[package]]
+name = "smart-leds"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66df34e571fa9993fa6f99131a374d58ca3d694b75f9baac93458fe0d6057bf0"
+dependencies = [
+ "smart-leds-trait 0.3.0",
 ]
 
 [[package]]
@@ -1231,6 +1240,15 @@ name = "smart-leds-trait"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebf6d833fa93f16a1c1874e62c2aebe8567e5bdd436d59bf543ed258b6f7a8e3"
+dependencies = [
+ "rgb",
+]
+
+[[package]]
+name = "smart-leds-trait"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bc64ee02bbbf469603016df746c0ed224f263280b6ebb49b7ebadbff375c572"
 dependencies = [
  "rgb",
 ]
@@ -1577,5 +1595,5 @@ dependencies = [
  "fixed",
  "fixed-macro",
  "pio",
- "smart-leds",
+ "smart-leds 0.3.0",
 ]
