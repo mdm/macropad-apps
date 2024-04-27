@@ -1,3 +1,4 @@
+use embassy_futures::select;
 use embassy_rp::usb::In;
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
@@ -118,8 +119,8 @@ impl<C: PixelColor> Drawable for Menu<'_, C> {
             .into_styled(self.clear_style)
             .draw(target)?;
 
-        for i in self.window_start..self.window_len {
-            if i - self.window_start >= self.items.len() {
+        for i in self.window_start..(self.window_start + self.window_len) {
+            if i >= self.items.len() {
                 break;
             }
 
@@ -127,14 +128,13 @@ impl<C: PixelColor> Drawable for Menu<'_, C> {
                 Point::new(0, (font_height * (i - self.window_start) as u32) as i32);
             let rectangle_size = Size::new(target_width, font_height);
             let text_position = rectangle_position + Point::new((font_width / 2) as i32, 0);
-            if i - self.window_start == self.selected {
+            if i == self.selected {
                 Rectangle::new(rectangle_position, rectangle_size)
                     .into_styled(self.selection_style)
                     .draw(target)?;
 
                 Text::with_baseline(
-                    self.items[i - self.window_start],
-                    // self.items[i],
+                    self.items[i],
                     text_position,
                     self.inverted_text_style,
                     Baseline::Top,
@@ -142,8 +142,7 @@ impl<C: PixelColor> Drawable for Menu<'_, C> {
                 .draw(target)?;
             } else {
                 Text::with_baseline(
-                    self.items[i - self.window_start],
-                    // self.items[i],
+                    self.items[i],
                     text_position,
                     self.normal_text_style,
                     Baseline::Top,
@@ -179,6 +178,10 @@ impl<'m, 'i> MenuManager<'m, 'i> {
         }
     }
 
+    pub fn select_item(&mut self, item: usize) {
+        self.menu.select_item(item);
+    }
+
     pub async fn choose<DI>(&mut self, display: &mut GraphicsMode<DI>) -> Option<usize>
     where
         DI: DisplayInterface,
@@ -205,7 +208,7 @@ impl<'m, 'i> MenuManager<'m, 'i> {
                             self.menu.select_item(self.menu.selected - 1);
                             self.menu.draw(display).ok()?;
                             display.flush().ok()?;
-                            }
+                        }
                     }
                     InputEvent::TurnedCW(_) => {
                         if self.menu.selected < self.menu.items.len() - 1 {
