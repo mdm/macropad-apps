@@ -22,6 +22,7 @@ use fixed::FixedU16;
 use menu::MenuManager;
 use panic_halt as _;
 use rand::Rng;
+use rtc::Rtc;
 use sh1106::{prelude::*, Builder};
 use smart_leds::hsv::{hsv2rgb, Hsv};
 use ws2812_pio_embassy::Ws2812;
@@ -32,6 +33,7 @@ mod chip8;
 mod input_handler;
 mod menu;
 mod rotary_io;
+mod rtc;
 
 const CAP: usize = 8;
 const SUBS: usize = 8;
@@ -107,6 +109,11 @@ async fn input_handler_task(mut input_handler: InputHandler<'static, PIO0, 0, CA
 async fn main(spawner: Spawner) {
     let peripherals = embassy_rp::init(Default::default());
 
+    let scl = peripherals.PIN_21;
+    let sda = peripherals.PIN_20;
+    let i2c = I2c::new_blocking(peripherals.I2C0, scl, sda, i2c::Config::default());
+    let mut rtc = Rtc::new(i2c);
+
     let Pio {
         mut common, sm0, ..
     } = Pio::new(peripherals.PIO0);
@@ -175,7 +182,7 @@ async fn main(spawner: Spawner) {
     let choice = MenuManager::new(
         &[
             "Chip-8 Emulator",
-            "Hello Rust!",
+            "Set Date & Time",
             "Hello world!",
             "Hello Marc!",
             "Test Item 4",
@@ -224,6 +231,10 @@ async fn main(spawner: Spawner) {
                         _ => unreachable!(),
                     };
                 }
+            }
+            1 => {
+                let display_height = display.size().height;
+                rtc.set_interactive(&mut display, display_height).await;
             }
             _ => {}
         }
