@@ -63,9 +63,9 @@ impl<'d, T: Instance, M: Mode> Rtc<'d, T, M> {
             "December",
         ];
 
-        let month_choice = MenuManager::new(&months, display_height)
-            .choose(display)
-            .await;
+        let mut month_menu = MenuManager::new(&months, display_height);
+        month_menu.select_item(current_datetime.month as usize - 1);
+        let month_choice = month_menu.choose(display).await;
     }
 
     pub fn set_datetime(&mut self, time: &DateTime) {
