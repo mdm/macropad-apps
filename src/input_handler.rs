@@ -68,28 +68,24 @@ impl<'a, P: Instance, const S: usize, const CAP: usize, const SUBS: usize>
             if !self.button_active && self.button_input.is_low() {
                 self.button_active = true;
                 self.publisher
-                    .publish(InputEvent::Pressed(InputSource::Button))
-                    .await;
+                    .publish_immediate(InputEvent::Pressed(InputSource::Button));
             }
             if self.button_active && self.button_input.is_high() {
                 self.button_active = false;
                 self.publisher
-                    .publish(InputEvent::Released(InputSource::Button))
-                    .await;
+                    .publish_immediate(InputEvent::Released(InputSource::Button));
             }
 
             for (i, key_input) in self.key_inputs.iter().enumerate() {
                 if !self.key_active[i] && key_input.is_low() {
                     self.key_active[i] = true;
                     self.publisher
-                        .publish(InputEvent::Pressed(InputSource::Key(i)))
-                        .await;
+                        .publish_immediate(InputEvent::Pressed(InputSource::Key(i)));
                 }
                 if self.key_active[i] && key_input.is_high() {
                     self.key_active[i] = false;
                     self.publisher
-                        .publish(InputEvent::Released(InputSource::Key(i)))
-                        .await;
+                        .publish_immediate(InputEvent::Released(InputSource::Key(i)));
                 }
             }
 
@@ -103,10 +99,10 @@ impl<'a, P: Instance, const S: usize, const CAP: usize, const SUBS: usize>
                 Either::Second(position) => {
                     if position < self.encoder_position {
                         self.publisher
-                            .publish(InputEvent::TurnedCCW(position))
-                            .await;
+                            .publish_immediate(InputEvent::TurnedCCW(position));
                     } else {
-                        self.publisher.publish(InputEvent::TurnedCW(position)).await;
+                        self.publisher
+                            .publish_immediate(InputEvent::TurnedCW(position));
                     }
                     self.encoder_position = position;
                 }
