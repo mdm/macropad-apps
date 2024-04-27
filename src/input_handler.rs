@@ -1,5 +1,8 @@
 use embassy_futures::select::{select, Either};
-use embassy_rp::{gpio::{AnyPin, Input, Pull}, pio::Instance};
+use embassy_rp::{
+    gpio::{AnyPin, Input, Pull},
+    pio::Instance,
+};
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, pubsub::Publisher};
 use embassy_time::{Duration, Timer};
 
@@ -22,16 +25,18 @@ pub enum InputEvent {
 const NUM_KEYS: usize = 12;
 
 pub struct InputHandler<'a, P: Instance, const S: usize, const CAP: usize, const SUBS: usize> {
-    button_input: Input<'a, AnyPin>,
+    button_input: Input<'a>,
     button_active: bool,
-    key_inputs: [Input<'a, AnyPin>; NUM_KEYS],
+    key_inputs: [Input<'a>; NUM_KEYS],
     key_active: [bool; NUM_KEYS],
     rotary_io: RotaryIO<'a, P, S>,
     encoder_position: i32,
     publisher: Publisher<'a, ThreadModeRawMutex, InputEvent, CAP, SUBS, 1>,
 }
 
-impl<'a, P: Instance, const S: usize, const CAP: usize, const SUBS: usize> InputHandler<'a, P, S, CAP, SUBS> {
+impl<'a, P: Instance, const S: usize, const CAP: usize, const SUBS: usize>
+    InputHandler<'a, P, S, CAP, SUBS>
+{
     pub fn new(
         button: AnyPin,
         keys: [AnyPin; NUM_KEYS],
@@ -88,11 +93,18 @@ impl<'a, P: Instance, const S: usize, const CAP: usize, const SUBS: usize> Input
                 }
             }
 
-            match select(Timer::after(interval), self.rotary_io.wait_position_change()).await {
+            match select(
+                Timer::after(interval),
+                self.rotary_io.wait_position_change(),
+            )
+            .await
+            {
                 Either::First(_) => {}
                 Either::Second(position) => {
                     if position < self.encoder_position {
-                        self.publisher.publish(InputEvent::TurnedCCW(position)).await;
+                        self.publisher
+                            .publish(InputEvent::TurnedCCW(position))
+                            .await;
                     } else {
                         self.publisher.publish(InputEvent::TurnedCW(position)).await;
                     }

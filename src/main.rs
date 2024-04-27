@@ -1,14 +1,17 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
+#![feature(impl_trait_in_assoc_type)]
 #![feature(array_chunks)]
 
 use embassy_executor::Spawner;
 use embassy_rp::{
+    bind_interrupts,
     clocks::{clk_sys_freq, RoscRng},
     gpio::{AnyPin, Level, Output},
+    i2c::{self, I2c},
     peripherals::{PIO0, PIO1},
-    pio::Pio,
+    pio::{self, Pio},
     pwm::{self, Pwm},
     spi::{self, Blocking, Spi},
 };
@@ -35,6 +38,11 @@ mod menu;
 mod rotary_io;
 mod rtc;
 
+bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
+    PIO1_IRQ_0 => pio::InterruptHandler<PIO1>;
+});
+
 const CAP: usize = 8;
 const SUBS: usize = 8;
 static INPUT_CHANNEL: PubSubChannel<ThreadModeRawMutex, InputEvent, CAP, SUBS, 1> =
@@ -43,7 +51,7 @@ static INPUT_CHANNEL: PubSubChannel<ThreadModeRawMutex, InputEvent, CAP, SUBS, 1
 const NEOPIXEL_NUM_LEDS: usize = 12;
 
 #[embassy_executor::task]
-async fn blinker_task(mut led: Output<'static, AnyPin>, interval: Duration) {
+async fn blinker_task(mut led: Output<'static>, interval: Duration) {
     let mut input_subscriber = INPUT_CHANNEL.subscriber().unwrap();
 
     for _ in 0..3 {
@@ -116,7 +124,7 @@ async fn main(spawner: Spawner) {
 
     let Pio {
         mut common, sm0, ..
-    } = Pio::new(peripherals.PIO0);
+    } = Pio::new(peripherals.PIO0, Irqs);
 
     let rotary_io =
         rotary_io::RotaryIO::new(&mut common, sm0, peripherals.PIN_17, peripherals.PIN_18);
@@ -142,7 +150,7 @@ async fn main(spawner: Spawner) {
 
     let Pio {
         mut common, sm0, ..
-    } = Pio::new(peripherals.PIO1);
+    } = Pio::new(peripherals.PIO1, Irqs);
     let ws2812 = Ws2812::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_19);
     spawner.spawn(color_fader_task(ws2812)).unwrap();
 
@@ -157,7 +165,7 @@ async fn main(spawner: Spawner) {
     pwm_config.divider = FixedU16::from_num(40);
     pwm_config.top = (clk_sys_freq() as f64 / f64::from(pwm_config.divider) / 440.0) as u16;
     pwm_config.compare_a = pwm_config.top / 2;
-    let mut pwm = Pwm::new_output_a(peripherals.PWM_CH0, peripherals.PIN_16, pwm_config);
+    let mut pwm = Pwm::new_output_a(peripherals.PWM_SLICE0, peripherals.PIN_16, pwm_config);
     Timer::after(Duration::from_secs(2)).await;
     speaker_enable.set_low();
 

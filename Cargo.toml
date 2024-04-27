@@ -17,23 +17,16 @@ embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", features
     "executor-interrupt",
     "integrated-timers",
 ] }
-embassy-time = { git = "https://github.com/embassy-rs/embassy.git", features = [
-    "nightly",
-    "unstable-traits",
-] }
+embassy-time = { git = "https://github.com/embassy-rs/embassy.git" }
 embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", features = [
-    "nightly",
     "unstable-pac",
-    "unstable-traits",
     "time-driver",
 ] }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", features = [
-    "nightly",
-] }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy.git" }
 embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy.git" }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy.git" }
 embedded-graphics = "0.7.1"
-embedded-hal = "1.0.0-alpha.10"
+embedded-hal = "1.0.0"
 panic-halt = "0.2.0"
 rand = { version = "0.8.5", default-features = false, features = ["small_rng"] }
 # rp2040-hal = "0.8.0"
@@ -46,4 +39,4 @@ pio-proc = "0.2.2"
 pio = "0.2.1"
 fixed = "1.23.1"
 itoa = "1.0.9"
-# defmt = "0.3.4"
+heapless = "0.8.0"
