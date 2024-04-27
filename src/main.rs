@@ -1,184 +1,257 @@
 #![no_std]
 #![no_main]
+#![feature(type_alias_impl_trait)]
+#![feature(impl_trait_in_assoc_type)]
+#![feature(array_chunks)]
 
-use core::convert::Infallible;
-
-use adafruit_macropad::{
-    entry,
-    hal::{
-        clocks::{init_clocks_and_plls, Clock},
-        gpio::FunctionSpi,
-        pac,
-        pio::PIOExt,
-        rosc::RingOscillator,
-        watchdog::Watchdog,
-        Sio, Spi, Timer,
-    },
-    Pins, XOSC_CRYSTAL_FREQ,
+use embassy_executor::Spawner;
+use embassy_rp::{
+    bind_interrupts,
+    clocks::{clk_sys_freq, RoscRng},
+    gpio::{AnyPin, Level, Output},
+    i2c::{self, I2c},
+    peripherals::{PIO0, PIO1},
+    pio::{self, Pio},
+    pwm::{self, Pwm},
+    spi::{self, Blocking, Spi},
 };
-use embedded_graphics::{
-    image::{Image, ImageRawLE},
-    mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},
-    pixelcolor::BinaryColor,
-    prelude::*,
-    text::{Baseline, Text},
+use embassy_sync::{
+    blocking_mutex::raw::ThreadModeRawMutex,
+    pubsub::{PubSubChannel, WaitResult},
 };
-use embedded_hal::{digital::v2::InputPin, digital::v2::OutputPin, spi::MODE_0};
-use fugit::RateExtU32;
-use menu::Menu;
-use panic_semihosting as _;
+use embassy_time::{Delay, Duration, Timer};
+use embedded_graphics::prelude::*;
+use fixed::FixedU16;
+use menu::MenuManager;
+use panic_halt as _;
 use rand::Rng;
+use rtc::Rtc;
 use sh1106::{prelude::*, Builder};
-use smart_leds::{
-    hsv::{hsv2rgb, Hsv},
-    SmartLedsWrite,
-};
-use ws2812_pio::Ws2812;
+use smart_leds::hsv::{hsv2rgb, Hsv};
+use ws2812_pio_embassy::Ws2812;
 
+use input_handler::{InputEvent, InputHandler, InputSource};
+
+mod chip8;
+mod input_handler;
 mod menu;
+mod rotary_io;
+mod rtc;
 
-#[entry]
-fn main() -> ! {
-    let mut pac = pac::Peripherals::take().unwrap();
-    let core = pac::CorePeripherals::take().unwrap();
+bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
+    PIO1_IRQ_0 => pio::InterruptHandler<PIO1>;
+});
 
-    let mut watchdog = Watchdog::new(pac.WATCHDOG);
+const CAP: usize = 8;
+const SUBS: usize = 8;
+static INPUT_CHANNEL: PubSubChannel<ThreadModeRawMutex, InputEvent, CAP, SUBS, 1> =
+    PubSubChannel::new();
 
-    let clocks = init_clocks_and_plls(
-        XOSC_CRYSTAL_FREQ,
-        pac.XOSC,
-        pac.CLOCKS,
-        pac.PLL_SYS,
-        pac.PLL_USB,
-        &mut pac.RESETS,
-        &mut watchdog,
-    )
-    .ok()
-    .unwrap();
+const NEOPIXEL_NUM_LEDS: usize = 12;
 
-    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
+#[embassy_executor::task]
+async fn blinker_task(mut led: Output<'static>, interval: Duration) {
+    let mut input_subscriber = INPUT_CHANNEL.subscriber().unwrap();
 
-    let sio = Sio::new(pac.SIO);
-    let pins = Pins::new(
-        pac.IO_BANK0,
-        pac.PADS_BANK0,
-        sio.gpio_bank0,
-        &mut pac.RESETS,
-    );
-
-    let mut led_pin = pins.led.into_push_pull_output();
-
-    // Configure the addressable LED
-    let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
-    let timer = Timer::new(pac.TIMER, &mut pac.RESETS);
-
-    let mut ws = Ws2812::new(
-        pins.neopixel.into_mode(),
-        &mut pio,
-        sm0,
-        clocks.peripheral_clock.freq(),
-        timer.count_down(),
-    );
-
-    let _spi_sclk = pins.sclk.into_mode::<FunctionSpi>();
-    let _spi_mosi = pins.mosi.into_mode::<FunctionSpi>();
-    // let _spi_miso = pins.miso.into_mode::<FunctionSpi>();
-    // TODO: Are we using the best settings for data size and baudrate?
-    let spi = Spi::<_, _, 8>::new(pac.SPI1).init(
-        &mut pac.RESETS,
-        clocks.peripheral_clock.freq(),
-        10.MHz(),
-        &MODE_0,
-    );
-    let mut oled_dc = pins.oled_dc.into_push_pull_output();
-    let mut oled_cs = pins.oled_cs.into_push_pull_output();
-    let mut oled_reset = pins.oled_reset.into_push_pull_output();
-
-    // Init OLED display
-    oled_cs.set_high().unwrap();
-    oled_dc.set_high().unwrap();
-    oled_reset.set_high().unwrap(); // set RESET high
-    oled_reset.set_low().unwrap(); // set RESET low
-    delay.delay_us(1000); // delay 1000us
-    oled_reset.set_high().unwrap(); // set RESET high
-    delay.delay_us(1000); // delay 1000us
-
-    let mut display: GraphicsMode<_> = Builder::new().connect_spi(spi, oled_dc, oled_cs).into();
-
-    display.init().unwrap();
-    display.flush().unwrap();
-
-    let im: ImageRawLE<BinaryColor> = ImageRawLE::new(include_bytes!("../rust.raw"), 64);
-
-    Image::new(&im, Point::new(32, 0))
-        .draw(&mut display)
-        .unwrap();
-
-    display.flush().unwrap();
-
-    for _i in 0..3 {
-        led_pin.set_high().unwrap();
-        delay.delay_ms(100);
-        led_pin.set_low().unwrap();
-        delay.delay_ms(100);
+    for _ in 0..3 {
+        led.set_high();
+        Timer::after(interval).await;
+        led.set_low();
+        Timer::after(interval).await;
     }
 
-    let key1 = pins.key1.into_pull_up_input();
-    let key2 = pins.key2.into_pull_up_input();
-    let key3 = pins.key3.into_pull_up_input();
-    let key4 = pins.key4.into_pull_up_input();
-    let key5 = pins.key5.into_pull_up_input();
-    let key6 = pins.key6.into_pull_up_input();
-    let key7 = pins.key7.into_pull_up_input();
-    let key8 = pins.key8.into_pull_up_input();
-    let key9 = pins.key9.into_pull_up_input();
-    let key10 = pins.key10.into_pull_up_input();
-    let key11 = pins.key11.into_pull_up_input();
-    let key12 = pins.key12.into_pull_up_input();
+    loop {
+        if let WaitResult::Message(InputEvent::Pressed(InputSource::Button)) =
+            input_subscriber.next_message().await
+        {
+            for _ in 0..3 {
+                led.set_high();
+                Timer::after(interval).await;
+                led.set_low();
+                Timer::after(interval).await;
+            }
+        }
+    }
+}
 
-    let keys: &[&dyn InputPin<Error = Infallible>] = &[
-        &key1, &key2, &key3, &key4, &key5, &key6, &key7, &key8, &key9, &key10, &key11, &key12,
-    ];
+#[embassy_executor::task]
+async fn color_fader_task(mut ws2812: Ws2812<'static, PIO1, 0, NEOPIXEL_NUM_LEDS>) {
+    let mut input_subscriber = INPUT_CHANNEL.subscriber().unwrap();
 
     let mut hues_and_values = [(0, 0); 12];
 
-    let mut rosc = RingOscillator::new(pac.ROSC).initialize();
+    loop {
+        if let Some(WaitResult::Message(InputEvent::Pressed(InputSource::Key(key)))) =
+            input_subscriber.try_next_message()
+        {
+            hues_and_values[key] = (RoscRng.gen::<u8>(), 255);
+        }
 
-    let mut menu = Menu::new(
+        let data = hues_and_values.map(|(hue, val)| {
+            let hsv = Hsv { hue, sat: 255, val };
+
+            hsv2rgb(hsv)
+        });
+
+        ws2812.write(&data).await;
+
+        hues_and_values = hues_and_values.map(|mut hv| {
+            if hv.1 > 0 {
+                hv.1 -= 5;
+            }
+
+            hv
+        });
+
+        Timer::after(Duration::from_millis(10)).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn input_handler_task(mut input_handler: InputHandler<'static, PIO0, 0, CAP, SUBS>) {
+    input_handler.run().await;
+}
+
+#[embassy_executor::main]
+async fn main(spawner: Spawner) {
+    let peripherals = embassy_rp::init(Default::default());
+
+    let scl = peripherals.PIN_21;
+    let sda = peripherals.PIN_20;
+    let i2c = I2c::new_blocking(peripherals.I2C0, scl, sda, i2c::Config::default());
+    let mut rtc = Rtc::new(i2c);
+
+    let Pio {
+        mut common, sm0, ..
+    } = Pio::new(peripherals.PIO0, Irqs);
+
+    let rotary_io =
+        rotary_io::RotaryIO::new(&mut common, sm0, peripherals.PIN_17, peripherals.PIN_18);
+
+    let button = peripherals.PIN_0.into();
+    let keys = [
+        peripherals.PIN_1.into(),
+        peripherals.PIN_2.into(),
+        peripherals.PIN_3.into(),
+        peripherals.PIN_4.into(),
+        peripherals.PIN_5.into(),
+        peripherals.PIN_6.into(),
+        peripherals.PIN_7.into(),
+        peripherals.PIN_8.into(),
+        peripherals.PIN_9.into(),
+        peripherals.PIN_10.into(),
+        peripherals.PIN_11.into(),
+        peripherals.PIN_12.into(),
+    ];
+    let input_publisher = INPUT_CHANNEL.publisher().unwrap();
+    let input_handler = InputHandler::new(button, keys, rotary_io, input_publisher);
+    spawner.spawn(input_handler_task(input_handler)).unwrap();
+
+    let Pio {
+        mut common, sm0, ..
+    } = Pio::new(peripherals.PIO1, Irqs);
+    let ws2812 = Ws2812::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_19);
+    spawner.spawn(color_fader_task(ws2812)).unwrap();
+
+    let led: AnyPin = peripherals.PIN_13.into();
+    let led = Output::new(led, Level::Low);
+    spawner
+        .spawn(blinker_task(led, Duration::from_millis(300)))
+        .unwrap();
+
+    let mut speaker_enable = Output::new(peripherals.PIN_14, Level::High);
+    let mut pwm_config: pwm::Config = Default::default();
+    pwm_config.divider = FixedU16::from_num(40);
+    pwm_config.top = (clk_sys_freq() as f64 / f64::from(pwm_config.divider) / 440.0) as u16;
+    pwm_config.compare_a = pwm_config.top / 2;
+    let mut pwm = Pwm::new_output_a(peripherals.PWM_SLICE0, peripherals.PIN_16, pwm_config);
+    Timer::after(Duration::from_secs(2)).await;
+    speaker_enable.set_low();
+
+    let sclk = peripherals.PIN_26;
+    let mosi = peripherals.PIN_27;
+    let miso = peripherals.PIN_28;
+    let mut display_config = spi::Config::default();
+    display_config.frequency = 10_000_000;
+    let spi: Spi<'_, _, Blocking> =
+        Spi::new_blocking(peripherals.SPI1, sclk, mosi, miso, display_config);
+
+    let oled_cs = Output::new(peripherals.PIN_22, Level::Low);
+    let mut oled_reset = Output::new(peripherals.PIN_23, Level::Low);
+    let oled_dc = Output::new(peripherals.PIN_24, Level::Low);
+
+    let mut display: GraphicsMode<_> = Builder::new().connect_spi(spi, oled_dc, oled_cs).into();
+
+    display.reset(&mut oled_reset, &mut Delay).unwrap();
+    display.init().unwrap();
+    display.flush().unwrap();
+
+    let choice = MenuManager::new(
         &[
-            "Hello Rust!",
+            "Chip-8 Emulator",
+            "Set Date & Time",
             "Hello world!",
             "Hello Marc!",
             "Test Item 4",
             "Test Item 5",
         ],
         display.size().height,
-        &FONT_6X10,
-        BinaryColor::Off,
-        BinaryColor::On,
-    );
+    )
+    .choose(&mut display)
+    .await;
 
-    delay.delay_ms(2000);
-    loop {
-        delay.delay_ms(10);
+    if let Some(choice) = choice {
+        display.clear();
+        display.flush().unwrap();
+        match choice {
+            0 => {
+                let choice = MenuManager::new(&["Pong", "Blinky"], display.size().height)
+                    .choose(&mut display)
+                    .await;
 
-        for (i, key) in keys.iter().enumerate() {
-            if key.is_low().unwrap() {
-                menu.select_item(i);
-                menu.draw(&mut display).unwrap();
-                display.flush().unwrap();
+                if let Some(choice) = choice {
+                    display.clear();
+                    display.flush().unwrap();
 
-                hues_and_values[i] = (rosc.gen::<u8>(), 255);
-            } else if hues_and_values[i].1 > 0 {
-                hues_and_values[i].1 -= 5;
+                    let mut chip8 = chip8::Chip8Harness::new();
+                    match choice {
+                        0 => {
+                            chip8
+                                .run(
+                                    include_bytes!("../chip8-rs/games/PONG"),
+                                    [1, 0, 12, 4, 0, 13, 0, 0, 0, 0, 0, 0],
+                                    &mut display,
+                                )
+                                .await
+                                .unwrap();
+                        }
+                        1 => {
+                            chip8
+                                .run(
+                                    include_bytes!("../chip8-rs/games/BLINKY"),
+                                    [0, 3, 0, 7, 6, 8, 0, 0, 0, 0, 0, 0],
+                                    &mut display,
+                                )
+                                .await
+                                .unwrap();
+                        }
+                        _ => unreachable!(),
+                    };
+                }
             }
+            1 => {
+                let display_height = display.size().height;
+                rtc.set_interactive(&mut display, display_height).await;
+            }
+            _ => {}
         }
+    }
 
-        ws.write(hues_and_values.iter().copied().map(|(hue, val)| {
-            let hsv = Hsv { hue, sat: 255, val };
+    display.clear();
+    display.flush().unwrap();
 
-            hsv2rgb(hsv)
-        }))
-        .unwrap();
+    loop {
+        Timer::after(Duration::from_secs(1)).await;
     }
 }

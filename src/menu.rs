@@ -1,11 +1,23 @@
+use embassy_futures::select;
+use embassy_rp::usb::In;
+use embassy_sync::{
+    blocking_mutex::raw::RawMutex,
+    pubsub::{DynSubscriber, Subscriber, WaitResult},
+};
 use embedded_graphics::{
     draw_target::DrawTarget,
-    mono_font::{MonoFont, MonoTextStyle, MonoTextStyleBuilder},
-    pixelcolor::PixelColor,
+    mono_font::{ascii::FONT_6X10, MonoFont, MonoTextStyle, MonoTextStyleBuilder},
+    pixelcolor::{BinaryColor, PixelColor},
     prelude::{Point, Size},
     primitives::{Primitive, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
     text::{Baseline, Text},
     Drawable,
+};
+use sh1106::{interface::DisplayInterface, prelude::GraphicsMode};
+
+use crate::{
+    input_handler::{InputEvent, InputSource},
+    INPUT_CHANNEL,
 };
 
 pub struct Menu<'a, C: PixelColor> {
@@ -107,8 +119,8 @@ impl<C: PixelColor> Drawable for Menu<'_, C> {
             .into_styled(self.clear_style)
             .draw(target)?;
 
-        for i in self.window_start..self.window_len {
-            if i - self.window_start >= self.items.len() {
+        for i in self.window_start..(self.window_start + self.window_len) {
+            if i >= self.items.len() {
                 break;
             }
 
@@ -116,14 +128,13 @@ impl<C: PixelColor> Drawable for Menu<'_, C> {
                 Point::new(0, (font_height * (i - self.window_start) as u32) as i32);
             let rectangle_size = Size::new(target_width, font_height);
             let text_position = rectangle_position + Point::new((font_width / 2) as i32, 0);
-            if i - self.window_start == self.selected {
+            if i == self.selected {
                 Rectangle::new(rectangle_position, rectangle_size)
                     .into_styled(self.selection_style)
                     .draw(target)?;
 
                 Text::with_baseline(
-                    self.items[i - self.window_start],
-                    // self.items[i],
+                    self.items[i],
                     text_position,
                     self.inverted_text_style,
                     Baseline::Top,
@@ -131,8 +142,7 @@ impl<C: PixelColor> Drawable for Menu<'_, C> {
                 .draw(target)?;
             } else {
                 Text::with_baseline(
-                    self.items[i - self.window_start],
-                    // self.items[i],
+                    self.items[i],
                     text_position,
                     self.normal_text_style,
                     Baseline::Top,
@@ -142,5 +152,74 @@ impl<C: PixelColor> Drawable for Menu<'_, C> {
         }
 
         Ok(())
+    }
+}
+
+pub struct MenuManager<'m, 'i> {
+    menu: Menu<'m, BinaryColor>,
+    input_subscriber: DynSubscriber<'i, InputEvent>,
+}
+
+impl<'m, 'i> MenuManager<'m, 'i> {
+    pub fn new(menu_items: &'m [&str], display_height: u32) -> Self {
+        let menu = Menu::new(
+            menu_items,
+            display_height,
+            &FONT_6X10,
+            BinaryColor::Off,
+            BinaryColor::On,
+        );
+
+        let input_subscriber = INPUT_CHANNEL.dyn_subscriber().unwrap();
+
+        MenuManager {
+            menu,
+            input_subscriber,
+        }
+    }
+
+    pub fn select_item(&mut self, item: usize) {
+        self.menu.select_item(item);
+    }
+
+    pub async fn choose<DI>(&mut self, display: &mut GraphicsMode<DI>) -> Option<usize>
+    where
+        DI: DisplayInterface,
+    {
+        display.clear();
+        self.menu.draw(display).ok()?;
+        display.flush().ok()?;
+
+        loop {
+            let wait_result = self.input_subscriber.next_message().await;
+
+            if let WaitResult::Message(msg) = wait_result {
+                match msg {
+                    InputEvent::Pressed(InputSource::Key(key)) => {
+                        self.menu.select_item(key);
+                        self.menu.draw(display).ok()?;
+                        display.flush().ok()?;
+                    }
+                    InputEvent::Pressed(InputSource::Button) => {
+                        return Some(self.menu.selected);
+                    }
+                    InputEvent::TurnedCCW(_) => {
+                        if self.menu.selected > 0 {
+                            self.menu.select_item(self.menu.selected - 1);
+                            self.menu.draw(display).ok()?;
+                            display.flush().ok()?;
+                        }
+                    }
+                    InputEvent::TurnedCW(_) => {
+                        if self.menu.selected < self.menu.items.len() - 1 {
+                            self.menu.select_item(self.menu.selected + 1);
+                            self.menu.draw(display).ok()?;
+                            display.flush().ok()?;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 }
