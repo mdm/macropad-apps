@@ -1,13 +1,14 @@
-use core::{fmt::Write, num, ops::RangeInclusive};
+use core::{fmt::Write, ops::RangeInclusive};
 
+use ds323x::{DateTimeAccess, Ds323x, NaiveDate};
 use embassy_rp::i2c::{I2c, Instance, Mode};
 use heapless::{String, Vec};
+use rtcc::{Datelike, Timelike};
 use sh1106::{interface::DisplayInterface, mode::GraphicsMode};
 
 use crate::menu::MenuManager;
 
 const MENU_RANGE: usize = 5;
-const RTC_ADDR: u8 = 0x68;
 
 pub struct DateTime {
     pub year: u16,
@@ -19,19 +20,23 @@ pub struct DateTime {
 }
 
 pub struct Rtc<'d, T: Instance, M: Mode> {
-    i2c: I2c<'d, T, M>,
+    rtc: Ds323x<ds323x::interface::I2cInterface<I2c<'d, T, M>>, ds323x::ic::DS3231>,
 }
 
 impl<'d, T: Instance, M: Mode> Rtc<'d, T, M> {
     pub fn new(i2c: I2c<'d, T, M>) -> Self {
-        Rtc { i2c }
+        let rtc = Ds323x::new_ds3231(i2c);
+
+        Rtc { rtc }
     }
 
     pub async fn set_interactive<DI>(&mut self, display: &mut GraphicsMode<DI>, display_height: u32)
     where
         DI: DisplayInterface,
     {
-        let current_datetime = self.get_datetime();
+        let Ok(current_datetime) = self.datetime() else {
+            return;
+        };
 
         // set the year
         let Some(year_choice) = self
@@ -131,29 +136,57 @@ impl<'d, T: Instance, M: Mode> Rtc<'d, T, M> {
         else {
             return;
         };
+
+        let new_datetime = DateTime {
+            year: year as u16,
+            month: month as u8,
+            day: day as u8,
+            hours: hours as u8,
+            minutes: minutes as u8,
+            seconds: seconds as u8,
+        };
+
+        let _ = self.set_datetime(&new_datetime);
     }
 
-    pub fn set_datetime(&mut self, time: &DateTime) {
-        // Set the time
-        todo!();
+    pub fn set_datetime(&mut self, datetime: &DateTime) -> Result<(), ()> {
+        let datetime = NaiveDate::from_ymd_opt(
+            datetime.year as i32,
+            datetime.month as u32,
+            datetime.day as u32,
+        )
+        .ok_or(())?
+        .and_hms_opt(
+            datetime.hours as u32,
+            datetime.minutes as u32,
+            datetime.seconds as u32,
+        )
+        .ok_or(())?;
+
+        self.rtc.set_datetime(&datetime).map_err(|_| ())
     }
 
-    pub fn get_datetime(&self) -> DateTime {
-        let year = 2024;
-        let month = 4;
-        let day = 27;
-        let hours = 12;
-        let minutes = 30;
-        let seconds = 45;
+    pub fn datetime(&mut self) -> Result<DateTime, ()> {
+        self.rtc
+            .datetime()
+            .map(|datetime| {
+                let year = datetime.year() as u16;
+                let month = datetime.month() as u8;
+                let day = datetime.day() as u8;
+                let hours = datetime.hour() as u8;
+                let minutes = datetime.minute() as u8;
+                let seconds = datetime.second() as u8;
 
-        DateTime {
-            year,
-            month,
-            day,
-            hours,
-            minutes,
-            seconds,
-        }
+                DateTime {
+                    year,
+                    month,
+                    day,
+                    hours,
+                    minutes,
+                    seconds,
+                }
+            })
+            .map_err(|_| ())
     }
 
     async fn choose_from_range<DI>(

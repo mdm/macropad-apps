@@ -187,7 +187,7 @@ async fn main(spawner: Spawner) {
     display.init().unwrap();
     display.flush().unwrap();
 
-    let choice = MenuManager::new(
+    while let Some(choice) = MenuManager::new(
         &[
             "Chip-8 Emulator",
             "Set Date & Time",
@@ -199,9 +199,8 @@ async fn main(spawner: Spawner) {
         display.size().height,
     )
     .choose(&mut display)
-    .await;
-
-    if let Some(choice) = choice {
+    .await
+    {
         display.clear();
         display.flush().unwrap();
         match choice {
