@@ -62,6 +62,9 @@ impl<'i> Chip8Harness<'i> {
                     WaitResult::Message(InputEvent::Released(InputSource::Key(key))) => {
                         self.active_keys[keymap[key]] = false;
                     }
+                    WaitResult::Message(InputEvent::Pressed(InputSource::Button)) => {
+                        return Ok(());
+                    }
                     _ => {}
                 }
                 continue;
