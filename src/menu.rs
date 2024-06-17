@@ -204,15 +204,15 @@ impl<'m, 'i> MenuManager<'m, 'i> {
                         return Some(self.menu.selected);
                     }
                     InputEvent::TurnedCCW(_) => {
-                        if self.menu.selected > 0 {
-                            self.menu.select_item(self.menu.selected - 1);
+                        if self.menu.selected < self.menu.items.len() - 1 {
+                            self.menu.select_item(self.menu.selected + 1);
                             self.menu.draw(display).ok()?;
                             display.flush().ok()?;
                         }
                     }
                     InputEvent::TurnedCW(_) => {
-                        if self.menu.selected < self.menu.items.len() - 1 {
-                            self.menu.select_item(self.menu.selected + 1);
+                        if self.menu.selected > 0 {
+                            self.menu.select_item(self.menu.selected - 1);
                             self.menu.draw(display).ok()?;
                             display.flush().ok()?;
                         }
